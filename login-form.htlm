@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Surprising — click, move, discover</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#7c3aed;--glass:rgba(255,255,255,0.04)}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{background:radial-gradient(1200px 600px at 10% 20%, #071023 0%, var(--bg) 40%), linear-gradient(180deg, rgba(124,58,237,0.06), transparent 30%);color:#e6eef8;display:flex;align-items:center;justify-content:center}
+    .wrap{width:min(980px,94%);padding:28px;border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);box-shadow:0 10px 40px rgba(2,6,23,0.7);backdrop-filter: blur(6px);} 
+    header{display:flex;gap:18px;align-items:center}
+    .logo{width:64px;height:64px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#06b6d4);display:grid;place-items:center;font-weight:700;color:white;font-size:22px;box-shadow:0 6px 20px rgba(124,58,237,0.18)}
+    h1{margin:0;font-size:24px;letter-spacing:0.2px}
+    p.lead{opacity:0.8;margin-top:6px}
+
+    .card{margin-top:20px;background:var(--card);padding:18px;border-radius:12px;border:1px solid rgba(255,255,255,0.02)}
+    .controls{display:flex;gap:10px;flex-wrap:wrap}
+    button{background:var(--glass);border:1px solid rgba(255,255,255,0.03);padding:10px 14px;border-radius:10px;color:inherit;cursor:pointer}
+    button.primary{background:linear-gradient(90deg,var(--accent),#06b6d4);color:white;border:none;box-shadow:0 6px 18px rgba(7,12,29,0.6)}
+
+    .center{display:grid;place-items:center;padding:40px 10px}
+    .surprise-box{width:320px;height:220px;border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);display:grid;place-items:center;position:relative;overflow:hidden;border:1px dashed rgba(255,255,255,0.03)}
+    .hint{position:absolute;bottom:12px;left:12px;opacity:0.7;font-size:13px}
+    .secret{font-weight:700;transform:translateY(12px);opacity:0;transition:all 700ms cubic-bezier(.2,.9,.3,1);text-align:center;padding:8px 12px}
+    .secret.show{opacity:1;transform:translateY(0)}
+
+    /* confetti canvas covers whole page */
+    #confettiCanvas{position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:40}
+
+    footer{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-top:16px}
+    .small{font-size:13px;opacity:0.75}
+
+    /* hidden easter egg area */
+    .egg{position:absolute;right:12px;top:12px;width:36px;height:36px;border-radius:10px;background:linear-gradient(180deg,#fff1,#fff1);display:grid;place-items:center;opacity:0.06;cursor:pointer}
+    .egg:hover{opacity:0.18}
+
+    /* accessibility focus */
+    button:focus{outline:3px solid rgba(124,58,237,0.18)}
+
+    /* animated stars (canvas fallback) */
+    #stars{position:absolute;inset:0;opacity:0.12;pointer-events:none}
+
+    /* secret message modal */
+    .modal{position:fixed;inset:0;display:grid;place-items:center;background:linear-gradient(180deg,rgba(2,6,23,0.6),rgba(2,6,23,0.85));z-index:60;opacity:0;pointer-events:none;transition:opacity 300ms}
+    .modal.show{opacity:1;pointer-events:auto}
+    .modal .box{background:linear-gradient(180deg,rgba(255,255,255,0.03),transparent);padding:22px;border-radius:16px;max-width:720px;width:92%;border:1px solid rgba(255,255,255,0.03)}
+    .close{margin-left:auto}
+
+    @media (max-width:520px){.surprise-box{width:92%;height:200px}}
+  </style>
+</head>
+<body>
+  <canvas id="confettiCanvas"></canvas>
+  <div class="wrap" role="main">
+    <header>
+      <div class="logo">S!</div>
+      <div>
+        <h1>Surprising — an interactive tiny experience</h1>
+        <p class="lead">Move your mouse, click the purple button, or find the tiny egg. Something unexpected will happen.</p>
+      </div>
+    </header>
+
+    <div class="card">
+      <div class="controls">
+        <button id="revealBtn" class="primary" aria-pressed="false">Click for a surprise</button>
+        <button id="calmBtn">Calm mode</button>
+        <button id="soundBtn">🔈 Toggle sound</button>
+        <div class="small" style="margin-left:auto">Tip: press the logo or press <kbd>Space</kbd></div>
+      </div>
+
+      <div class="center">
+        <div class="surprise-box" id="box" tabindex="0" aria-live="polite">
+          <canvas id="stars"></canvas>
+          <div class="secret" id="secret">You found a tiny poem — <em>expect the unexpected.</em></div>
+          <div class="egg" id="egg" aria-hidden="true">🐣</div>
+          <div class="hint">Move your mouse across the box</div>
+        </div>
+      </div>
+
+      <footer>
+        <div class="small">Built with plain HTML/CSS/JS — no libraries.</div>
+        <div class="small">Created for delight ✨</div>
+      </footer>
+    </div>
+  </div>
+
+  <div class="modal" id="modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="box">
+      <div style="display:flex;gap:12px;align-items:center">
+        <h2 style="margin:0">Surprise!</h2>
+        <button class="close" id="closeModal">Close</button>
+      </div>
+      <p id="modalText">Loading...</p>
+    </div>
+  </div>
+
+  <script>
+    // ----------------------- setup small utilities -----------------------
+    const revealBtn = document.getElementById('revealBtn');
+    const calmBtn = document.getElementById('calmBtn');
+    const soundBtn = document.getElementById('soundBtn');
+    const box = document.getElementById('box');
+    const secret = document.getElementById('secret');
+    const egg = document.getElementById('egg');
+    const modal = document.getElementById('modal');
+    const modalText = document.getElementById('modalText');
+    const closeModal = document.getElementById('closeModal');
+
+    // simple audio using WebAudio API
+    let audioEnabled = true;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = AudioCtx ? new AudioCtx() : null;
+    function playChime(){
+      if(!audioEnabled || !audioCtx) return;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'sine'; o.frequency.value = 880;
+      g.gain.value = 0.001;
+      o.connect(g); g.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+      g.gain.cancelScheduledValues(now);
+      g.gain.setValueAtTime(0.001, now);
+      g.gain.exponentialRampToValueAtTime(0.12, now + 0.08);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      o.start(now); o.stop(now + 0.7);
+    }
+
+    soundBtn.addEventListener('click', ()=>{audioEnabled = !audioEnabled; soundBtn.textContent = audioEnabled ? '🔈 Toggle sound' : '🔇 Muted'})
+
+    // ----------------------- confetti (lightweight) -----------------------
+    const confettiCanvas = document.getElementById('confettiCanvas');
+    const C = confettiCanvas.getContext('2d');
+    function fit(){ confettiCanvas.width = innerWidth; confettiCanvas.height = innerHeight }
+    fit(); addEventListener('resize', fit);
+
+    let confetti = [];
+    function spawnConfetti(x,y,count=28){
+      for(let i=0;i<count;i++){
+        confetti.push({x,y,vx:(Math.random()-0.5)*6,vy:(Math.random()*-6)-2,rot:Math.random()*360,vr:Math.random()*10,ttl:80+Math.random()*40,color:['#7c3aed','#06b6d4','#f97316','#ef4444'][Math.floor(Math.random()*4)],w:6+Math.random()*8})
+      }
+      if(audioEnabled) playChime();
+    }
+    function tickConfetti(){
+      C.clearRect(0,0,confettiCanvas.width,confettiCanvas.height);
+      for(let i=confetti.length-1;i>=0;i--){
+        let p = confetti[i]; p.x += p.vx; p.y += p.vy; p.vy += 0.35; p.rot += p.vr; p.ttl--;
+        C.save(); C.translate(p.x,p.y); C.rotate(p.rot*Math.PI/180); C.fillStyle = p.color; C.fillRect(-p.w/2,-p.w/2,p.w,p.w*0.6); C.restore();
+        if(p.ttl<0 || p.y>confettiCanvas.height+60) confetti.splice(i,1);
+      }
+      requestAnimationFrame(tickConfetti);
+    }
+    tickConfetti();
+
+    // ----------------------- stars background in box -----------------------
+    const starsCanvas = document.getElementById('stars');
+    const S = starsCanvas.getContext('2d');
+    function fitStars(){ starsCanvas.width = box.clientWidth; starsCanvas.height = box.clientHeight }
+    fitStars(); addEventListener('resize', fitStars);
+    let stars = Array.from({length:120},()=>({x:Math.random()*starsCanvas.width,y:Math.random()*starsCanvas.height,r:Math.random()*1.2,vy:0.1+Math.random()*0.4}));
+    function tickStars(){ S.clearRect(0,0,starsCanvas.width,starsCanvas.height); for(let s of stars){ s.y+=s.vy; if(s.y>starsCanvas.height)s.y=0; S.beginPath(); S.arc(s.x,s.y,s.r,0,Math.PI*2); S.fillStyle='white'; S.fill(); } requestAnimationFrame(tickStars)}
+    tickStars();
+
+    // ----------------------- interactions -----------------------
+    let movedAcross = false;
+    box.addEventListener('mousemove', (e)=>{
+      const r = box.getBoundingClientRect();
+      const x = e.clientX - r.left; const y = e.clientY - r.top;
+      // mild parallax secret reveal
+      secret.style.transform = `translateY(${Math.max(-6, (y-r.height/2)/20)}px)`;
+      if(!movedAcross && Math.abs(x - r.width/2) > r.width*0.3){ movedAcross = true; secret.classList.add('show'); spawnConfetti(e.clientX, e.clientY, 16); }
+    });
+
+    revealBtn.addEventListener('click', ()=>{
+      showModal(); spawnConfetti(innerWidth/2, innerHeight/2, 60);
+    });
+
+    calmBtn.addEventListener('click', ()=>{ confetti = []; secret.classList.remove('show'); modal.classList.remove('show'); modal.setAttribute('aria-hidden','true'); })
+
+    // logo and keyboard shortcut
+    document.querySelector('.logo').addEventListener('click', ()=>{ spawnConfetti(innerWidth/2,innerHeight/2,40); showModal('You clicked the logo — bravo!') })
+    addEventListener('keydown', (e)=>{ if(e.code==='Space'){ e.preventDefault(); revealBtn.click(); } })
+
+    // egg easter egg
+    egg.addEventListener('click', ()=>{ showModal('You cracked the egg. A secret: kindness is contagious.'); spawnConfetti(egg.getBoundingClientRect().left+18, egg.getBoundingClientRect().top+18, 36) })
+    egg.addEventListener('mouseover', ()=>{ egg.style.opacity = '0.22' })
+
+    // ----------------------- modal content -----------------------
+    const surprises = [
+      'A tiny poem: "Small bright things come unnoticed — open both hands."',
+      'Hidden trick: double-click the box to toggle slow motion confetti.',
+      'Fun fact: every click here increases your chance of smiling by about 99%.',
+      'Mini puzzle: rearrange the letters of "surprise" and find a friend to share it with.'
+    ];
+    function showModal(override){ modal.classList.add('show'); modal.setAttribute('aria-hidden','false'); modalText.textContent = override || surprises[Math.floor(Math.random()*surprises.length)]; }
+    closeModal.addEventListener('click', ()=>{ modal.classList.remove('show'); modal.setAttribute('aria-hidden','true'); })
+
+    // double click to toggle slow-motion
+    let slow = false;
+    box.addEventListener('dblclick', ()=>{ slow = !slow; if(slow){ confetti.forEach(c=>{c.vx*=0.2; c.vy*=0.2; c.vr*=0.3}); showModal('Time slows down — double-click again to resume.'); } else { showModal('Back to full speed!'); } })
+
+    // add a tiny keyboard accessible hint for screen readers
+    box.addEventListener('focus', ()=>{ secret.classList.add('show'); });
+    box.addEventListener('blur', ()=>{ /* keep it */ });
+
+    // accessibility: if user prefers reduced motion, disable confetti
+    const mq = matchMedia('(prefers-reduced-motion: reduce)');
+    if(mq.matches){ spawnConfetti = ()=>{}; }
+
+    // small performance-friendly limit
+    setInterval(()=>{ if(confetti.length>1000) confetti.splice(0, confetti.length-800); }, 2000);
+
+    // initial tiny welcome puff
+    setTimeout(()=>{ spawnConfetti(innerWidth/2, innerHeight/2, 22); }, 800);
+
+    // show secret message after a while
+    setTimeout(()=>{ secret.classList.add('show'); }, 2200);
+
+    // safety: unlock audio on first user gesture (some browsers require it)
+    ['click','keydown','mousemove'].forEach(ev=>addEventListener(ev, ()=>{ if(audioCtx && audioCtx.state==='suspended') audioCtx.resume().catch(()=>{}); }, {once:true}));
+
+  </script>
+</body>
+</html>
